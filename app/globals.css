@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    @apply bg-cream text-ink;
+  }
+
+  :focus-visible {
+    outline: 3px solid theme("colors.gold.400");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-brand-700 px-6 py-3.5
+      text-base font-semibold text-white shadow-card transition-[background-color,transform,box-shadow]
+      duration-200 will-change-transform
+      hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-brand-800 hover:shadow-card-lg
+      active:translate-y-0 active:scale-[0.98]
+      focus-visible:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60
+      disabled:hover:translate-y-0 disabled:hover:scale-100;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-xl border-2 border-brand-700
+      bg-transparent px-6 py-3.5 text-base font-semibold text-brand-800
+      transition-[background-color,transform,box-shadow] duration-200 will-change-transform
+      hover:-translate-y-0.5 hover:scale-[1.02] hover:bg-brand-50
+      active:translate-y-0 active:scale-[0.98]
+      disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .card {
+    @apply rounded-2xl bg-cream-100 p-6 shadow-card;
+  }
+
+  /* Hover-lift + gold glow, used on funding/benefit/testimonial cards. */
+  .card-interactive {
+    @apply card transition-[transform,box-shadow] duration-300 will-change-transform
+      hover:-translate-y-1.5 hover:scale-[1.02];
+    box-shadow: 0 2px 10px rgba(15, 42, 28, 0.08);
+  }
+
+  .card-interactive:hover {
+    box-shadow:
+      0 12px 32px rgba(15, 42, 28, 0.14),
+      0 0 0 1px rgba(203, 160, 71, 0.35);
+  }
+
+  .icon-box {
+    @apply flex h-12 w-12 flex-none items-center justify-center rounded-full bg-brand-50 text-brand-700;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full bg-gold-50 px-3 py-1 text-xs font-semibold
+      uppercase tracking-wide text-gold-600;
+  }
+
+  .option-button {
+    @apply w-full rounded-xl border-2 border-brand-100 bg-cream-100 px-5 py-4 text-left
+      text-base font-medium text-ink shadow-card transition-all duration-150 will-change-transform
+      hover:-translate-y-0.5 hover:border-brand-400 hover:bg-brand-50 hover:shadow-card-lg
+      active:translate-y-0
+      focus-visible:border-brand-500 aria-pressed:border-brand-700 aria-pressed:bg-brand-50
+      aria-pressed:ring-2 aria-pressed:ring-brand-700;
+  }
+
+  .section-blob {
+    @apply pointer-events-none absolute rounded-full opacity-40 blur-3xl;
+  }
+}

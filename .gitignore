@@ -20,3 +20,9 @@ out/
 # Logs
 *.log
 npm-debug.log*
+
+# Local lead backup (see lib/leadStore.ts)
+/data/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
