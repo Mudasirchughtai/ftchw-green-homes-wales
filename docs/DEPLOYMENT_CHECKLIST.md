@@ -1,7 +1,17 @@
 # Deployment Checklist
 
-## Hard blockers (a real `VERCEL_ENV=production` deploy is coded to refuse
-these — see `scripts/check-production-readiness.mjs`, run as `prebuild`)
+## Staging on Vercel right now
+
+Every normal deploy (including from `main`, on the default `.vercel.app`
+domain) builds and shows the site as-is, with a loud dev-warning banner in
+the footer for whatever's still missing. Nothing here blocks a staging
+link — see "Hard blockers" below for what *does* gate a real launch.
+
+## Hard blockers (only enforced when `CONFIRM_PRODUCTION_LAUNCH=true` is
+explicitly set in Vercel's env vars — see `scripts/check-production-readiness.mjs`,
+run as `prebuild`. This is a deliberate one-time flip for the actual go-live
+moment, not automatic on every deploy — Vercel's own `VERCEL_ENV=production`
+fires on every routine push to `main`, which would otherwise break staging.)
 
 - [ ] `LEGAL_ENTITY_NAME`, `COMPANY_NUMBER`, `REGISTERED_ADDRESS` — footer
       currently shows a loud dev-only warning banner instead of these
