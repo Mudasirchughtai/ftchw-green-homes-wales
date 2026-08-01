@@ -1,4 +1,6 @@
-import { CONTACT_EMAIL, CONTACT_EMAIL_HREF, CONTACT_PHONE_DISPLAY, CONTACT_PHONE_HREF } from "@/config/contact";
+import { CONTACT_EMAIL, CONTACT_EMAIL_HREF, CONTACT_PHONE_DISPLAY } from "@/config/contact";
+import { getLegalEntityLine, isLegalEntityConfigured } from "@/config/company";
+import { PhoneCtaLink } from "@/components/common/PhoneCtaLink";
 
 const LEGAL_LINKS = [
   { href: "/privacy-policy", label: "Privacy Policy" },
@@ -15,9 +17,9 @@ export function Footer() {
     <footer className="border-t border-brand-100 bg-brand-900 px-4 py-10 text-brand-100">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold">
-          <a href={CONTACT_PHONE_HREF} className="text-white transition-colors hover:text-gold-300">
+          <PhoneCtaLink className="text-white transition-colors hover:text-gold-300">
             {CONTACT_PHONE_DISPLAY}
-          </a>
+          </PhoneCtaLink>
           <a href={CONTACT_EMAIL_HREF} className="text-white transition-colors hover:text-gold-300">
             {CONTACT_EMAIL}
           </a>
@@ -33,13 +35,21 @@ export function Footer() {
 
         {/* Condensed from docs/original-brief.md -> "FULL FOOTER DISCLAIMER" at the client's request. */}
         <div className="mt-6 space-y-3 border-t border-white/10 pt-6 text-xs leading-relaxed text-brand-200">
+          {!isLegalEntityConfigured && (
+            <p className="rounded-lg border-2 border-dashed border-red-400 bg-red-950/40 p-3 font-semibold text-red-200">
+              ⚠ DEV WARNING — LEGAL ENTITY DETAILS NOT CONFIGURED. Do not publish to production
+              until LEGAL_ENTITY_NAME, COMPANY_NUMBER and REGISTERED_ADDRESS are set (see
+              docs/DEPLOYMENT_CHECKLIST.md). A real production deploy is blocked until this is
+              resolved.
+            </p>
+          )}
           <p>
             First Time Central Heating Wales is a marketing and homeowner-introduction service
-            operated by [Legal entity name, company number and registered address — to be
-            confirmed]. We are not Welsh Government, Ofgem, the Development Bank of Wales, the
-            Green Homes Wales scheme, a grant-awarding body, lender, financial adviser or
-            installation contractor — we introduce homeowners to independent, appropriately
-            accredited installers and retrofit professionals operating in Wales.
+            operated by {getLegalEntityLine()} We are not Welsh Government, Ofgem, the
+            Development Bank of Wales, the Green Homes Wales scheme, a grant-awarding body,
+            lender, financial adviser or installation contractor — we introduce homeowners to
+            independent, appropriately accredited installers and retrofit professionals
+            operating in Wales.
           </p>
           <p>
             Grant, funding and finance eligibility is not guaranteed and is determined by the

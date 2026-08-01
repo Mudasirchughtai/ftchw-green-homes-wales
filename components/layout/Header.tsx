@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMotionValueEvent, useScroll } from "framer-motion";
 import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_HREF } from "@/config/contact";
+import { trackEvent } from "@/lib/analytics";
 
 const NAV_LINKS = [
   { href: "#how-it-works", label: "How It Works" },
@@ -52,12 +53,13 @@ export function Header() {
         <div className="hidden items-center gap-4 lg:flex">
           <a
             href={CONTACT_PHONE_HREF}
+            onClick={() => trackEvent("phone_cta_click")}
             className="text-sm font-semibold text-brand-800 transition-colors hover:text-brand-900"
           >
             {CONTACT_PHONE_DISPLAY}
           </a>
           <a href="#eligibility" className="btn-primary">
-            Check My Eligibility
+            Check My Potential Eligibility
           </a>
         </div>
 
@@ -65,6 +67,7 @@ export function Header() {
           <a
             href={CONTACT_PHONE_HREF}
             aria-label="Call First Time Central Heating Wales"
+            onClick={() => trackEvent("phone_cta_click")}
             className="flex h-10 w-10 flex-none items-center justify-center rounded-full border-2 border-brand-700
               text-brand-800 transition-transform duration-150 active:scale-90"
           >

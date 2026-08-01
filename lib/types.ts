@@ -1,128 +1,108 @@
-export type YesNo = "yes" | "no";
+export type PropertyLocation = "wales" | "england" | "scotland" | "northern_ireland" | "other";
 
-export type OwnershipStatus = "yes" | "joint_owner" | "no" | "landlord";
-
-export type CurrentHeating =
-  | "heating_oil"
-  | "lpg"
-  | "mains_gas"
-  | "electric_storage"
-  | "direct_electric"
-  | "coal"
-  | "biomass"
-  | "existing_heat_pump"
-  | "no_central_heating"
-  | "other"
-  | "not_sure";
-
-export type MainsGasConnection = "yes" | "no" | "not_sure";
-
-export type ReplacementTimescale =
-  | "asap"
-  | "within_3_months"
-  | "within_6_months"
-  | "researching"
-  | "not_sure";
-
-export type PropertyType =
-  | "detached"
-  | "semi_detached"
-  | "terraced"
-  | "bungalow"
-  | "flat"
+export type OwnershipStatus =
+  | "sole_owner"
+  | "joint_owner"
+  | "private_landlord"
+  | "social_landlord"
+  | "business_owned"
+  | "tenant"
   | "other";
 
-export type PropertyAge =
-  | "before_1900"
-  | "1900_1949"
-  | "1950_1979"
-  | "1980_1999"
-  | "2000_2020"
-  | "within_6_months"
-  | "not_sure";
+export type OccupancyStatus =
+  | "main_residence"
+  | "second_home"
+  | "holiday_home"
+  | "rental_property"
+  | "commercial"
+  | "other";
 
-export type ListedStatus = "yes" | "no" | "not_sure";
+export type YesNoNotSure = "yes" | "no" | "not_sure";
+export type YesNo = "yes" | "no";
 
-export type Improvement =
-  | "air_source_heat_pump"
-  | "ground_source_heat_pump"
-  | "solar_panels"
-  | "battery_storage"
-  | "insulation"
-  | "heating_controls"
-  | "windows_glazing"
-  | "lowering_bills"
-  | "not_sure";
+export type ExistingHeating =
+  | "mains_gas"
+  | "oil"
+  | "lpg"
+  | "coal"
+  | "direct_electric"
+  | "storage_heaters"
+  | "existing_heat_pump"
+  | "other";
 
-export type PreferredContactMethod = "telephone" | "whatsapp" | "sms" | "email";
-export type BestContactTime = "morning" | "afternoon" | "evening" | "anytime";
+export type PropertyType =
+  | "detached_house"
+  | "semi_detached_house"
+  | "terraced_house"
+  | "bungalow"
+  | "flat"
+  | "maisonette"
+  | "other";
 
-export interface Step1Answers {
-  inWales: YesNo | null;
-  ownership: OwnershipStatus | null;
-  mainResidence: YesNo | null;
-}
+/** Standardised, case-sensitive values -- also used verbatim as the Privyr
+ * "funding_route" field, so these strings must never be altered ad hoc. */
+export type FundingRoute =
+  | "potential_enhanced_bus"
+  | "potential_standard_bus"
+  | "potential_green_homes_wales"
+  | "potential_both_routes"
+  | "manual_review"
+  | "outside_welsh_service_area"
+  | "unlikely_eligible";
 
-export interface Step2Answers {
-  currentHeating: CurrentHeating | null;
-  onMainsGas: MainsGasConnection | null;
-  replacementTimescale: ReplacementTimescale | null;
-}
-
-export interface Step3Answers {
+export interface QualificationAnswers {
+  propertyLocation: PropertyLocation | null;
+  ownershipStatus: OwnershipStatus | null;
+  occupancyStatus: OccupancyStatus | null;
+  listedProperty: YesNoNotSure | null;
+  newBuildUnderSixMonths: YesNo | null;
+  mainsGasGrid: YesNoNotSure | null;
+  existingHeating: ExistingHeating | null;
   propertyType: PropertyType | null;
-  propertyAge: PropertyAge | null;
-  listed: ListedStatus | null;
-  improvements: Improvement[];
+  postcode: string;
 }
 
-export interface Step4Answers {
-  firstName: string;
-  lastName: string;
-  mobile: string;
+export interface ContactAnswers {
+  fullName: string;
+  phone: string;
   email: string;
-  postcode: string;
-  addressLine1: string;
-  preferredContactMethod: PreferredContactMethod | null;
-  bestContactTime: BestContactTime | null;
 }
 
 export interface ConsentAnswers {
-  serviceContactConsent: boolean;
+  enquiryConsent: boolean;
   marketingConsent: boolean;
 }
 
 export interface EligibilityFormState {
-  step1: Step1Answers;
-  step2: Step2Answers;
-  step3: Step3Answers;
-  step4: Step4Answers;
+  qualification: QualificationAnswers;
+  contact: ContactAnswers;
   consent: ConsentAnswers;
 }
 
 export interface AttributionData {
-  pageUrl: string;
+  landingUrl: string;
   referrer: string;
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
   utmContent: string | null;
   utmTerm: string | null;
-  fbclid: string | null;
   gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
+  fbclid: string | null;
+  firstVisitAt: string | null;
 }
-
-export type ResultType = "A" | "B" | "C" | "D" | "E";
-
-export type LeadPriority = "high" | "standard" | "manual_review" | "out_of_area" | "low";
 
 export interface LeadSubmission extends EligibilityFormState {
   attribution: AttributionData;
   honeypot?: string;
+  formLoadedAt?: number;
+  submissionId: string;
+  turnstileToken?: string;
 }
 
-export interface LeadResult {
-  result: ResultType;
-  priority: LeadPriority;
-  tags: string[];
+export interface EligibilityResult {
+  fundingRoute: FundingRoute;
+  reasons: string[];
 }

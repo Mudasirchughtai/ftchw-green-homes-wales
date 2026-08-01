@@ -107,7 +107,7 @@ export function EstimateGrant() {
           </p>
 
           <a href="#eligibility" className="btn-primary mt-5 block w-full text-center">
-            Check My Exact Eligibility
+            Check My Potential Eligibility
           </a>
         </Reveal>
       </div>

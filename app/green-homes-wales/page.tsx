@@ -12,14 +12,40 @@ import { WhyHeatPump } from "@/components/benefits/WhyHeatPump";
 import { HowItWorks } from "@/components/how-it-works/HowItWorks";
 import { GreenHomesWalesEligibility } from "@/components/eligibility-info/GreenHomesWalesEligibility";
 import { BoilerUpgradeSchemeEligibility } from "@/components/eligibility-info/BoilerUpgradeSchemeEligibility";
-import { Testimonials } from "@/components/testimonials/Testimonials";
 import { FAQSection } from "@/components/faq/FAQSection";
 import { FinalCta } from "@/components/cta/FinalCta";
+import { absoluteUrl } from "@/lib/site";
+
+const TITLE = "Heat Pump Grants Wales | Up to £9,000 Support";
+const DESCRIPTION =
+  "Check your potential eligibility for the Boiler Upgrade Scheme and Green Homes Wales interest-free funding with a free 60-second initial check.";
+const CANONICAL_PATH = "/green-homes-wales";
 
 export const metadata: Metadata = {
-  title: "Heat Pump Grants and Green Homes Wales Funding | First Time Central Heating Wales",
-  description:
-    "Check whether your Welsh home may qualify for up to £9,000 towards an eligible heat pump, interest-free Green Homes Wales funding and expert retrofit support.",
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: absoluteUrl(CANONICAL_PATH) },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: absoluteUrl(CANONICAL_PATH),
+    siteName: "First Time Central Heating Wales",
+    locale: "en_GB",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+};
+
+const webPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: TITLE,
+  description: DESCRIPTION,
+  url: absoluteUrl(CANONICAL_PATH),
 };
 
 export default function GreenHomesWalesPage() {
@@ -39,13 +65,13 @@ export default function GreenHomesWalesPage() {
         <HowItWorks />
         <GreenHomesWalesEligibility />
         <BoilerUpgradeSchemeEligibility />
-        <Testimonials />
         <FAQSection />
         <FinalCta />
       </main>
       <MainDisclaimer />
       <Footer />
       <MobileStickyCta />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageSchema) }} />
     </div>
   );
 }

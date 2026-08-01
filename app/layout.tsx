@@ -1,21 +1,35 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { MotionProvider } from "@/components/animation/MotionProvider";
+import { Analytics } from "@/components/analytics/Analytics";
+import { CookieConsentBanner } from "@/components/analytics/CookieConsentBanner";
+import { OrganizationSchema } from "@/components/seo/OrganizationSchema";
+import { SITE_URL, isIndexableEnvironment } from "@/lib/site";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Heat Pump Grants and Green Homes Wales Funding | First Time Central Heating Wales",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Heat Pump Grants Wales | Up to £9,000 Support",
+    template: "%s | First Time Central Heating Wales",
+  },
   description:
-    "Check whether your Welsh home may qualify for up to £9,000 towards an eligible heat pump, interest-free Green Homes Wales funding and expert retrofit support.",
+    "Check your potential eligibility for the Boiler Upgrade Scheme and Green Homes Wales interest-free funding with a free 60-second initial check.",
+  robots: isIndexableEnvironment()
+    ? { index: true, follow: true }
+    : { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB" className={inter.variable}>
       <body className="font-sans antialiased">
+        <OrganizationSchema />
         <MotionProvider>{children}</MotionProvider>
+        <CookieConsentBanner />
+        <Analytics />
       </body>
     </html>
   );

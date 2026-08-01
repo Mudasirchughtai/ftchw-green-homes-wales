@@ -1,54 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { determineResult } from "@/lib/scoring";
+import { determineFundingRoute } from "@/lib/eligibility";
 import { sendLeadToPrivyr } from "@/lib/privyr";
 import { backupLead } from "@/lib/leadStore";
-import { isValidEmail, isValidUkMobile, isValidUkPostcode, normalizeUkPhone } from "@/lib/validation";
+import { leadSubmissionSchema } from "@/lib/leadSchema";
+import { normalizeEmail, normalizeUkPhone, normalizeUkPostcode } from "@/lib/validation";
+import { verifyTurnstileToken } from "@/lib/turnstile";
+import { logLeadError } from "@/lib/logger";
 import type { LeadSubmission } from "@/lib/types";
 
-// Simple in-memory rate limit + duplicate guard. Resets on server restart --
-// swap for a shared store (Redis/DB) before going live behind multiple
-// instances.
+// No CORS headers are set, so this route only accepts same-origin requests
+// (the default browser behaviour) -- restricted CORS by omission.
+
+// In-memory rate limit / idempotency / dedup. NOT durable: resets on
+// redeploy and isn't shared across multiple server instances. This is a
+// documented deployment blocker -- see docs/DEPLOYMENT_CHECKLIST.md.
 const submissionsByIp = new Map<string, number[]>();
-const recentIdempotencyKeys = new Set<string>();
+const seenSubmissionIds = new Set<string>();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 5;
+const MAX_BODY_BYTES = 20_000;
+const MIN_COMPLETION_TIME_MS = 3_000;
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
-  const timestamps = (submissionsByIp.get(ip) ?? []).filter(
-    (t) => now - t < RATE_LIMIT_WINDOW_MS,
-  );
+  const timestamps = (submissionsByIp.get(ip) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
   timestamps.push(now);
   submissionsByIp.set(ip, timestamps);
   return timestamps.length > RATE_LIMIT_MAX;
-}
-
-function validate(body: LeadSubmission): string[] {
-  const errors: string[] = [];
-
-  if (body.honeypot) errors.push("Spam detected");
-  if (body.step1.inWales === null) errors.push("Missing: is the property in Wales");
-  if (body.step1.ownership === null) errors.push("Missing: ownership status");
-  if (body.step1.mainResidence === null) errors.push("Missing: main residence status");
-  if (body.step2.currentHeating === null) errors.push("Missing: current heating");
-  if (body.step3.propertyType === null) errors.push("Missing: property type");
-
-  if (!body.step4.firstName?.trim()) errors.push("First name is required");
-  if (!body.step4.lastName?.trim()) errors.push("Last name is required");
-  if (!body.step4.email?.trim() || !isValidEmail(body.step4.email)) {
-    errors.push("A valid email address is required");
-  }
-  if (!body.step4.mobile?.trim() || !isValidUkMobile(body.step4.mobile)) {
-    errors.push("A valid UK mobile number is required");
-  }
-  if (!body.step4.postcode?.trim() || !isValidUkPostcode(body.step4.postcode)) {
-    errors.push("A valid UK postcode is required");
-  }
-  if (!body.consent.serviceContactConsent) {
-    errors.push("Service-contact consent is required");
-  }
-
-  return errors;
 }
 
 export async function POST(request: NextRequest) {
@@ -58,50 +36,101 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, errors: ["Too many requests"] }, { status: 429 });
   }
 
-  let body: LeadSubmission;
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (contentLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ ok: false, errors: ["Request too large"] }, { status: 413 });
+  }
+
+  let rawBody: unknown;
   try {
-    body = await request.json();
+    rawBody = await request.json();
   } catch {
     return NextResponse.json({ ok: false, errors: ["Invalid request body"] }, { status: 400 });
   }
 
-  const errors = validate(body);
-  if (errors.length > 0) {
-    return NextResponse.json({ ok: false, errors }, { status: 400 });
+  const parsed = leadSubmissionSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { ok: false, errors: parsed.error.issues.map((i) => i.message) },
+      { status: 400 },
+    );
+  }
+  const body = parsed.data as LeadSubmission;
+
+  // Honeypot: real visitors never fill this hidden field.
+  if (body.honeypot) {
+    return NextResponse.json({ ok: true }); // silently accept, don't tip off bots
   }
 
-  const idempotencyKey =
-    request.headers.get("x-idempotency-key") ??
-    `${body.step4.email.toLowerCase()}:${body.step4.mobile}`;
-  if (recentIdempotencyKeys.has(idempotencyKey)) {
+  // Minimum completion time: bots typically submit near-instantly.
+  if (body.formLoadedAt && Date.now() - body.formLoadedAt < MIN_COMPLETION_TIME_MS) {
+    return NextResponse.json({ ok: false, errors: ["Submission too fast"] }, { status: 400 });
+  }
+
+  const turnstile = await verifyTurnstileToken(body.turnstileToken, ip);
+  if (!turnstile.ok) {
+    return NextResponse.json({ ok: false, errors: ["Anti-spam verification failed"] }, { status: 400 });
+  }
+
+  if (seenSubmissionIds.has(body.submissionId)) {
     return NextResponse.json({ ok: true, duplicate: true });
   }
-  recentIdempotencyKeys.add(idempotencyKey);
+  seenSubmissionIds.add(body.submissionId);
 
-  body.step4.mobile = normalizeUkPhone(body.step4.mobile);
+  const originalPhone = body.contact.phone;
+  const normalizedPhone = normalizeUkPhone(originalPhone);
+  const normalizedLead: LeadSubmission = {
+    ...body,
+    contact: {
+      ...body.contact,
+      phone: normalizedPhone,
+      email: normalizeEmail(body.contact.email),
+    },
+    qualification: {
+      ...body.qualification,
+      postcode: normalizeUkPostcode(body.qualification.postcode),
+    },
+  };
 
-  const scored = determineResult(body);
+  const { fundingRoute } = determineFundingRoute(normalizedLead.qualification);
 
-  const privyrResult = await sendLeadToPrivyr(body, scored);
+  const privyrResult = await sendLeadToPrivyr(normalizedLead, fundingRoute, normalizedPhone, originalPhone);
 
+  let backedUp = true;
   try {
-    await backupLead(body, scored, {
-      idempotencyKey,
-      privyrDelivered: privyrResult.delivered,
-    });
+    await backupLead(normalizedLead, fundingRoute, { privyrDelivered: privyrResult.delivered });
   } catch (err) {
-    // Backup write failed but we still have the lead in memory / Privyr may
-    // have accepted it -- log loudly rather than losing it silently.
-    console.error("Failed to write lead backup", err);
+    backedUp = false;
+    logLeadError("Failed to write lead backup", {
+      submissionId: normalizedLead.submissionId,
+      email: normalizedLead.contact.email,
+      phone: normalizedPhone,
+      error: err,
+    });
   }
 
   if (!privyrResult.delivered) {
-    console.error("Privyr delivery failed, lead saved to local backup only", privyrResult.error);
+    logLeadError("Privyr delivery failed", {
+      submissionId: normalizedLead.submissionId,
+      email: normalizedLead.contact.email,
+      phone: normalizedPhone,
+      webhookUrl: process.env.PRIVYR_WEBHOOK_URL,
+      error: privyrResult.error,
+    });
+  }
+
+  // Only confirm success once the lead has actually been delivered or is
+  // safely persisted in the (documented-as-non-durable) local backup.
+  if (!privyrResult.delivered && !backedUp) {
+    return NextResponse.json(
+      { ok: false, errors: ["We couldn't save your enquiry. Please try again or call us directly."] },
+      { status: 502 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
-    result: scored.result,
-    priority: scored.priority,
+    fundingRoute,
+    submissionId: normalizedLead.submissionId,
   });
 }

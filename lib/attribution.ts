@@ -6,14 +6,11 @@ const STORAGE_KEY = "ftchw_attribution";
 
 /**
  * Captures UTM/click-id params on first landing and persists them in
- * sessionStorage so they survive the multi-step form even if the query
- * string is dropped on later navigations, per CLAUDE.md -> "Preserve
- * attribution across the multi-step form."
+ * sessionStorage so first-touch attribution survives the multi-step form
+ * even if the query string is dropped on later navigations.
  */
 export function captureAttribution(): AttributionData {
-  if (typeof window === "undefined") {
-    return emptyAttribution();
-  }
+  if (typeof window === "undefined") return emptyAttribution();
 
   const existing = window.sessionStorage.getItem(STORAGE_KEY);
   if (existing) {
@@ -26,15 +23,18 @@ export function captureAttribution(): AttributionData {
 
   const params = new URLSearchParams(window.location.search);
   const attribution: AttributionData = {
-    pageUrl: window.location.href,
+    landingUrl: window.location.href,
     referrer: document.referrer || "",
     utmSource: params.get("utm_source"),
     utmMedium: params.get("utm_medium"),
     utmCampaign: params.get("utm_campaign"),
     utmContent: params.get("utm_content"),
     utmTerm: params.get("utm_term"),
-    fbclid: params.get("fbclid"),
     gclid: params.get("gclid"),
+    gbraid: params.get("gbraid"),
+    wbraid: params.get("wbraid"),
+    fbclid: params.get("fbclid"),
+    firstVisitAt: new Date().toISOString(),
   };
 
   window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(attribution));
@@ -43,14 +43,17 @@ export function captureAttribution(): AttributionData {
 
 function emptyAttribution(): AttributionData {
   return {
-    pageUrl: "",
+    landingUrl: "",
     referrer: "",
     utmSource: null,
     utmMedium: null,
     utmCampaign: null,
     utmContent: null,
     utmTerm: null,
-    fbclid: null,
     gclid: null,
+    gbraid: null,
+    wbraid: null,
+    fbclid: null,
+    firstVisitAt: null,
   };
 }

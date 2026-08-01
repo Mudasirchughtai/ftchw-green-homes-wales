@@ -1,5 +1,5 @@
 import { Reveal } from "@/components/animation/Reveal";
-import { CONTACT_PHONE_HREF } from "@/config/contact";
+import { PhoneCtaLink } from "@/components/common/PhoneCtaLink";
 
 export function FinalCta() {
   return (
@@ -17,14 +17,11 @@ export function FinalCta() {
 
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <a href="#eligibility" className="btn-primary w-full sm:w-auto">
-            Check My Eligibility
+            Check My Potential Eligibility
           </a>
-          <a
-            href={CONTACT_PHONE_HREF}
-            className="btn-secondary w-full border-white text-white hover:bg-white/10 sm:w-auto"
-          >
+          <PhoneCtaLink className="btn-secondary w-full border-white text-white hover:bg-white/10 sm:w-auto">
             Speak to the Team
-          </a>
+          </PhoneCtaLink>
         </div>
 
         <p className="mt-5 text-xs text-brand-200">

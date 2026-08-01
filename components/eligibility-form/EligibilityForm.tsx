@@ -1,176 +1,261 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { OptionButton } from "@/components/eligibility-form/OptionButton";
+import { FormScreenGate } from "@/components/eligibility-form/FormScreenGate";
 import { ProgressIndicator } from "@/components/eligibility-form/ProgressIndicator";
-import { QUESTIONS, TOTAL_STEPS } from "@/components/eligibility-form/schema";
-import { Step4Contact } from "@/components/eligibility-form/Step4Contact";
-import { ResultRenderer } from "@/components/results/ResultRenderer";
+import { QUALIFICATION_QUESTIONS, TOTAL_SCREENS } from "@/components/eligibility-form/schema";
+import { PostcodeScreen } from "@/components/eligibility-form/PostcodeScreen";
+import { ContactDetailsScreen } from "@/components/eligibility-form/ContactDetailsScreen";
+import { ConsentScreen } from "@/components/eligibility-form/ConsentScreen";
+import { TurnstileWidget } from "@/components/eligibility-form/TurnstileWidget";
+import { ThankYouScreen } from "@/components/eligibility-form/ThankYouScreen";
 import { captureAttribution } from "@/lib/attribution";
-import { isValidEmail, isValidUkMobile, isValidUkPostcode } from "@/lib/validation";
-import type {
-  ConsentAnswers,
-  EligibilityFormState,
-  LeadResult,
-  Step4Answers,
-} from "@/lib/types";
+import { trackEvent } from "@/lib/analytics";
+import { generateSubmissionId } from "@/lib/submissionId";
+import { isValidEmail, isValidUkPhone, isValidUkPostcode } from "@/lib/validation";
+import type { ConsentAnswers, ContactAnswers, FundingRoute, QualificationAnswers } from "@/lib/types";
 
-const EMPTY_STEP4: Step4Answers = {
-  firstName: "",
-  lastName: "",
-  mobile: "",
-  email: "",
+const STORAGE_KEY = "ftchw_green_homes_wales_form_v1";
+
+const EMPTY_QUALIFICATION: QualificationAnswers = {
+  propertyLocation: null,
+  ownershipStatus: null,
+  occupancyStatus: null,
+  listedProperty: null,
+  newBuildUnderSixMonths: null,
+  mainsGasGrid: null,
+  existingHeating: null,
+  propertyType: null,
   postcode: "",
-  addressLine1: "",
-  preferredContactMethod: null,
-  bestContactTime: null,
 };
 
-const EMPTY_CONSENT: ConsentAnswers = {
-  serviceContactConsent: false,
-  marketingConsent: false,
-};
+const EMPTY_CONTACT: ContactAnswers = { fullName: "", phone: "", email: "" };
+const EMPTY_CONSENT: ConsentAnswers = { enquiryConsent: false, marketingConsent: false };
 
-const SLIDE_DISTANCE = 48;
+const POSTCODE_SCREEN_INDEX = QUALIFICATION_QUESTIONS.length; // 8
+const CONTACT_SCREEN_INDEX = POSTCODE_SCREEN_INDEX + 1; // 9
+const CONSENT_SCREEN_INDEX = CONTACT_SCREEN_INDEX + 1; // 10
 
-const slideVariants = {
-  enter: (direction: 1 | -1) => ({ x: direction * SLIDE_DISTANCE, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (direction: 1 | -1) => ({ x: direction * -SLIDE_DISTANCE, opacity: 0 }),
-};
-
-type AnswerMap = Record<string, string | string[] | null>;
-
-function buildFormState(answers: AnswerMap, step4: Step4Answers, consent: ConsentAnswers): EligibilityFormState {
-  return {
-    step1: {
-      inWales: (answers.inWales as EligibilityFormState["step1"]["inWales"]) ?? null,
-      ownership: (answers.ownership as EligibilityFormState["step1"]["ownership"]) ?? null,
-      mainResidence: (answers.mainResidence as EligibilityFormState["step1"]["mainResidence"]) ?? null,
-    },
-    step2: {
-      currentHeating: (answers.currentHeating as EligibilityFormState["step2"]["currentHeating"]) ?? null,
-      onMainsGas: (answers.onMainsGas as EligibilityFormState["step2"]["onMainsGas"]) ?? null,
-      replacementTimescale:
-        (answers.replacementTimescale as EligibilityFormState["step2"]["replacementTimescale"]) ?? null,
-    },
-    step3: {
-      propertyType: (answers.propertyType as EligibilityFormState["step3"]["propertyType"]) ?? null,
-      propertyAge: (answers.propertyAge as EligibilityFormState["step3"]["propertyAge"]) ?? null,
-      listed: (answers.listed as EligibilityFormState["step3"]["listed"]) ?? null,
-      improvements: (answers.improvements as string[] | undefined)?.length
-        ? (answers.improvements as EligibilityFormState["step3"]["improvements"])
-        : [],
-    },
-    step4,
-    consent,
-  };
+interface PersistedState {
+  qualification: QualificationAnswers;
+  contact: ContactAnswers;
+  consent: ConsentAnswers;
+  index: number;
+  submissionId: string;
+  formLoadedAt: number;
 }
 
+const slideVariants = {
+  enter: (direction: 1 | -1) => ({ x: direction * 48, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (direction: 1 | -1) => ({ x: direction * -48, opacity: 0 }),
+};
+
 export function EligibilityForm() {
-  const [answers, setAnswers] = useState<AnswerMap>({});
-  const [step4, setStep4] = useState<Step4Answers>(EMPTY_STEP4);
+  const [qualification, setQualification] = useState<QualificationAnswers>(EMPTY_QUALIFICATION);
+  const [contact, setContact] = useState<ContactAnswers>(EMPTY_CONTACT);
   const [consent, setConsent] = useState<ConsentAnswers>(EMPTY_CONSENT);
-  const [index, setIndex] = useState(0); // 0..QUESTIONS.length-1 = questions, QUESTIONS.length = contact step
+  const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
+  // Locks Back/Continue/options for the ~250ms slide transition. Without
+  // this, rapid clicks (a fast user, keyboard navigation, or automated
+  // tests) can land while both the outgoing and incoming screens are still
+  // mounted together, producing duplicate-labelled interactive elements --
+  // confirmed via cross-browser testing, not hypothetical.
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionSafetyTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [submissionId, setSubmissionId] = useState<string>("");
+  const [formLoadedAt, setFormLoadedAt] = useState<number>(0);
   const [honeypot, setHoneypot] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string>();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [result, setResult] = useState<LeadResult | null>(null);
+  const [result, setResult] = useState<{ fundingRoute: FundingRoute } | null>(null);
+  const [hasStarted, setHasStarted] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const hasViewedRef = useRef(false);
 
-  const totalScreens = QUESTIONS.length + 1;
-  const isContactScreen = index === QUESTIONS.length;
-  const currentQuestion = isContactScreen ? null : QUESTIONS[index];
+  // Resume from localStorage after mount (avoids SSR/hydration mismatch),
+  // otherwise start a fresh session with a stable submission id.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as PersistedState;
+        setQualification(parsed.qualification);
+        setContact(parsed.contact);
+        setConsent(parsed.consent);
+        setIndex(parsed.index);
+        setSubmissionId(parsed.submissionId);
+        setFormLoadedAt(parsed.formLoadedAt);
+        if (parsed.index > 0) setHasStarted(true);
+        return;
+      }
+    } catch {
+      // corrupt/old storage shape -- fall through to a fresh session
+    }
+    setSubmissionId(generateSubmissionId());
+    setFormLoadedAt(Date.now());
+  }, []);
 
-  const currentStepNumber = isContactScreen ? TOTAL_STEPS : currentQuestion?.stepNumber ?? 1;
-  const percentComplete = ((index + 1) / totalScreens) * 100;
+  useEffect(() => {
+    if (!hasViewedRef.current) {
+      hasViewedRef.current = true;
+      trackEvent("eligibility_form_view");
+    }
+  }, []);
+
+  // Persist on every change, except once a result has been confirmed.
+  useEffect(() => {
+    if (!submissionId || result) return;
+    const state: PersistedState = { qualification, contact, consent, index, submissionId, formLoadedAt };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [qualification, contact, consent, index, submissionId, formLoadedAt, result]);
+
+  // Focus moves to the new question heading after every step change.
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [index]);
+
+  useEffect(() => () => clearTimeout(transitionSafetyTimer.current), []);
+
+  const isQualificationScreen = index < POSTCODE_SCREEN_INDEX;
+  const currentQuestion = isQualificationScreen ? QUALIFICATION_QUESTIONS[index] : null;
 
   const canContinue = useMemo(() => {
-    if (isContactScreen) return true;
-    if (!currentQuestion) return false;
-    const value = answers[currentQuestion.id];
-    return currentQuestion.type === "multi" ? Array.isArray(value) && value.length > 0 : Boolean(value);
-  }, [answers, currentQuestion, isContactScreen]);
+    if (isQualificationScreen && currentQuestion) {
+      return Boolean(qualification[currentQuestion.id as keyof QualificationAnswers]);
+    }
+    if (index === POSTCODE_SCREEN_INDEX) return qualification.postcode.trim().length > 0;
+    if (index === CONTACT_SCREEN_INDEX) {
+      return Boolean(contact.fullName.trim() && contact.phone.trim() && contact.email.trim());
+    }
+    if (index === CONSENT_SCREEN_INDEX) return consent.enquiryConsent;
+    return false;
+  }, [isQualificationScreen, currentQuestion, qualification, contact, consent, index]);
 
   function selectSingle(id: string, value: string) {
-    setAnswers((prev) => ({ ...prev, [id]: value }));
+    setQualification((prev) => ({ ...prev, [id]: value }));
+    trackEvent("eligibility_step_complete", { question: id });
   }
 
-  function toggleMulti(id: string, value: string) {
-    setAnswers((prev) => {
-      const current = (prev[id] as string[] | undefined) ?? [];
-      const next = current.includes(value)
-        ? current.filter((v) => v !== value)
-        : [...current, value];
-      return { ...prev, [id]: next };
-    });
+  function navigateTo(nextIndex: number, dir: 1 | -1) {
+    setIsTransitioning(true);
+    setDirection(dir);
+    setIndex(nextIndex);
+    clearTimeout(transitionSafetyTimer.current);
+    // Cleared for real by AnimatePresence's onExitComplete below; this is
+    // just a safety net in case that callback doesn't fire.
+    transitionSafetyTimer.current = setTimeout(() => setIsTransitioning(false), 400);
   }
 
   function goBack() {
-    setDirection(-1);
-    setIndex((i) => Math.max(0, i - 1));
+    navigateTo(Math.max(0, index - 1), -1);
   }
 
-  function validateContact(): Record<string, string> {
-    const next: Record<string, string> = {};
-    if (!step4.firstName.trim()) next.firstName = "First name is required.";
-    if (!step4.lastName.trim()) next.lastName = "Last name is required.";
-    if (!isValidUkMobile(step4.mobile)) next.mobile = "Enter a valid UK mobile number.";
-    if (!isValidEmail(step4.email)) next.email = "Enter a valid email address.";
-    if (!isValidUkPostcode(step4.postcode)) next.postcode = "Enter a valid UK postcode.";
-    if (!step4.addressLine1.trim()) next.addressLine1 = "Address is required.";
-    if (!consent.serviceContactConsent) {
-      next.serviceContactConsent = "Please confirm you're happy for us to contact you.";
-    }
-    return next;
+  function reportValidationError(field: string, message: string) {
+    trackEvent("eligibility_validation_error", { field });
+    setErrors((prev) => ({ ...prev, [field]: message }));
   }
 
   async function handleContinue() {
-    if (!isContactScreen) {
-      setDirection(1);
-      setIndex((i) => Math.min(totalScreens - 1, i + 1));
+    if (!hasStarted) {
+      setHasStarted(true);
+      trackEvent("eligibility_form_start");
+    }
+
+    if (index === POSTCODE_SCREEN_INDEX) {
+      if (!isValidUkPostcode(qualification.postcode)) {
+        reportValidationError("postcode", "Enter a valid UK postcode.");
+        return;
+      }
+      setErrors({});
+      navigateTo(index + 1, 1);
       return;
     }
 
-    const validationErrors = validateContact();
-    setErrors(validationErrors);
-    if (Object.keys(validationErrors).length > 0) return;
+    if (index === CONTACT_SCREEN_INDEX) {
+      const nextErrors: Record<string, string> = {};
+      if (!contact.fullName.trim()) nextErrors.fullName = "Enter your full name.";
+      if (!isValidUkPhone(contact.phone)) nextErrors.phone = "Enter a valid UK phone number.";
+      if (!isValidEmail(contact.email)) nextErrors.email = "Enter a valid email address.";
+      if (Object.keys(nextErrors).length > 0) {
+        setErrors(nextErrors);
+        Object.keys(nextErrors).forEach((field) => trackEvent("eligibility_validation_error", { field }));
+        return;
+      }
+      setErrors({});
+      navigateTo(index + 1, 1);
+      return;
+    }
 
+    if (index === CONSENT_SCREEN_INDEX) {
+      if (!consent.enquiryConsent) {
+        reportValidationError("enquiryConsent", "Please confirm you're happy for us to contact you.");
+        return;
+      }
+      setErrors({});
+      await submit();
+      return;
+    }
+
+    // Qualification (single-choice) screens.
+    navigateTo(Math.min(TOTAL_SCREENS - 1, index + 1), 1);
+  }
+
+  async function submit() {
     setSubmitting(true);
     setSubmitError(null);
+    trackEvent("lead_submit_attempt");
     try {
       const attribution = captureAttribution();
-      const formState = buildFormState(answers, step4, consent);
       const res = await fetch("/api/leads/green-homes-wales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formState, attribution, honeypot }),
+        body: JSON.stringify({
+          qualification,
+          contact,
+          consent,
+          attribution,
+          honeypot,
+          formLoadedAt,
+          submissionId,
+          turnstileToken,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
         throw new Error(data.errors?.join(", ") || "Something went wrong. Please try again.");
       }
-      setResult({ result: data.result, priority: data.priority, tags: [] });
+      trackEvent("lead_submit_success", { funding_route: data.fundingRoute });
+      trackEvent("eligibility_result_view", { funding_route: data.fundingRoute });
+      window.localStorage.removeItem(STORAGE_KEY);
+      setResult({ fundingRoute: data.fundingRoute });
     } catch (err) {
+      trackEvent("lead_submit_failure");
       setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && canContinue && !submitting && !isTransitioning) {
+      e.preventDefault();
+      handleContinue();
+    }
+  }
+
   if (result) {
-    return (
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <ResultRenderer result={result.result} />
-      </motion.div>
-    );
+    return <ThankYouScreen fundingRoute={result.fundingRoute} submissionId={submissionId} />;
   }
 
   return (
-    <div className="card w-full max-w-xl overflow-hidden">
-      <ProgressIndicator step={currentStepNumber} totalSteps={TOTAL_STEPS} percent={percentComplete} />
+    <div className="card w-full max-w-xl overflow-hidden" onKeyDown={handleKeyDown}>
+      <ProgressIndicator current={index + 1} total={TOTAL_SCREENS} />
 
       {/* Honeypot -- hidden from real users, bots often fill every field. */}
       <input
@@ -184,7 +269,19 @@ export function EligibilityForm() {
         aria-hidden="true"
       />
 
-      <AnimatePresence mode="wait" custom={direction} initial={false}>
+      {/* mode="sync" (the default -- no mode prop), not "wait": with "wait",
+          cross-browser testing showed the exit-complete callback not
+          firing reliably in WebKit, leaving the next screen never mounted.
+          Both screens now animate concurrently instead -- which is exactly
+          why FormScreenGate below is essential, not decorative: for that
+          ~250ms overlap, the outgoing screen's fieldset/buttons are still
+          in the DOM at the same time as the incoming screen's, and several
+          questions share option labels ("Yes"/"No"). Without gating, that's
+          two elements with the same accessible name/role simultaneously --
+          confirmed as a real, reproducible bug (not just a test artifact)
+          across Chrome and WebKit alike. isTransitioning additionally
+          locks Back/Continue for the same window as a UX nicety. */}
+      <AnimatePresence custom={direction} initial={false} onExitComplete={() => setIsTransitioning(false)}>
         <motion.div
           key={index}
           custom={direction}
@@ -194,59 +291,72 @@ export function EligibilityForm() {
           exit="exit"
           transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
         >
-          {isContactScreen ? (
-            <Step4Contact
-              values={step4}
-              consent={consent}
-              errors={errors}
-              onChange={setStep4}
-              onConsentChange={setConsent}
-            />
-          ) : (
-            currentQuestion && (
-              <fieldset>
-                <legend className="text-xl font-semibold text-brand-900">{currentQuestion.question}</legend>
-                {currentQuestion.type === "multi" && currentQuestion.helpText && (
-                  <p className="mt-1 text-sm text-ink-light">{currentQuestion.helpText}</p>
-                )}
-                <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {currentQuestion.options.map((opt) => {
-                    const value = answers[currentQuestion.id];
-                    const selected =
-                      currentQuestion.type === "multi"
-                        ? Array.isArray(value) && value.includes(opt.value)
-                        : value === opt.value;
-                    return (
-                      <OptionButton
-                        key={opt.value}
-                        label={opt.label}
-                        selected={selected}
-                        onClick={() =>
-                          currentQuestion.type === "multi"
-                            ? toggleMulti(currentQuestion.id, opt.value)
-                            : selectSingle(currentQuestion.id, opt.value)
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              </fieldset>
-            )
+          <FormScreenGate>
+          {isQualificationScreen && currentQuestion && (
+            <fieldset>
+              {/* role="heading" -- a bare <legend> has no implicit heading
+                  role, so without this, 8 of the 11 "question headings" the
+                  form is supposed to expose would be invisible to
+                  screen-reader heading navigation. */}
+              <legend
+                ref={headingRef as unknown as React.RefObject<HTMLLegendElement>}
+                role="heading"
+                aria-level={2}
+                tabIndex={-1}
+                className="text-xl font-semibold text-brand-900 focus:outline-none"
+              >
+                {currentQuestion.question}
+              </legend>
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {currentQuestion.options.map((opt) => (
+                  <OptionButton
+                    key={opt.value}
+                    label={opt.label}
+                    selected={qualification[currentQuestion.id as keyof QualificationAnswers] === opt.value}
+                    onClick={() => selectSingle(currentQuestion.id, opt.value)}
+                    disabled={isTransitioning}
+                  />
+                ))}
+              </div>
+            </fieldset>
           )}
+
+          {index === POSTCODE_SCREEN_INDEX && (
+            <PostcodeScreen
+              ref={headingRef}
+              value={qualification.postcode}
+              error={errors.postcode}
+              onChange={(value) => setQualification((prev) => ({ ...prev, postcode: value }))}
+            />
+          )}
+
+          {index === CONTACT_SCREEN_INDEX && (
+            <ContactDetailsScreen ref={headingRef} values={contact} errors={errors} onChange={setContact} />
+          )}
+
+          {index === CONSENT_SCREEN_INDEX && (
+            <ConsentScreen ref={headingRef} consent={consent} error={errors.enquiryConsent} onChange={setConsent} />
+          )}
+          </FormScreenGate>
         </motion.div>
       </AnimatePresence>
 
+      {index === CONSENT_SCREEN_INDEX && (
+        <TurnstileWidget onVerify={setTurnstileToken} />
+      )}
+
       {submitError && (
-        <p role="alert" className="mt-4 text-sm text-red-700">
-          {submitError}
-        </p>
+        <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p>{submitError}</p>
+          <p className="mt-1 text-xs">Your answers have been kept -- press Retry to try again.</p>
+        </div>
       )}
 
       <div className="mt-7 flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={goBack}
-          disabled={index === 0 || submitting}
+          disabled={index === 0 || submitting || isTransitioning}
           className="text-sm font-semibold text-brand-800 underline-offset-4 hover:underline disabled:opacity-0"
         >
           Back
@@ -254,10 +364,16 @@ export function EligibilityForm() {
         <button
           type="button"
           onClick={handleContinue}
-          disabled={!canContinue || submitting}
+          disabled={!canContinue || submitting || isTransitioning}
           className="btn-primary flex-1 sm:flex-none"
         >
-          {submitting ? "Submitting…" : isContactScreen ? "Show My Funding Options" : "Continue"}
+          {submitting
+            ? "Submitting…"
+            : submitError
+              ? "Retry"
+              : index === CONSENT_SCREEN_INDEX
+                ? "Submit My Enquiry"
+                : "Continue"}
         </button>
       </div>
     </div>

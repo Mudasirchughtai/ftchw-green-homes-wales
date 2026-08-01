@@ -89,7 +89,9 @@ export function Hero() {
         </div>
 
         <div className="flex flex-col items-center lg:pt-4">
-          <div id="eligibility">
+          {/* scroll-mt clears the sticky header so #eligibility anchor jumps
+              (and Continue-button auto-scrolls) never land underneath it. */}
+          <div id="eligibility" className="w-full scroll-mt-24">
             <Reveal delay={0.2} y={16}>
               <EligibilityForm />
             </Reveal>

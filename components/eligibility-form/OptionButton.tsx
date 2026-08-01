@@ -4,15 +4,17 @@ interface OptionButtonProps {
   label: string;
   selected: boolean;
   onClick: () => void;
+  disabled?: boolean;
 }
 
-export function OptionButton({ label, selected, onClick }: OptionButtonProps) {
+export function OptionButton({ label, selected, onClick, disabled }: OptionButtonProps) {
   return (
     <button
       type="button"
-      className="option-button"
+      className="option-button disabled:cursor-not-allowed disabled:opacity-60"
       aria-pressed={selected}
       onClick={onClick}
+      disabled={disabled}
     >
       <span className="flex items-center justify-between gap-3">
         {label}

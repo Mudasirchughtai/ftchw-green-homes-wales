@@ -5,6 +5,10 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* Keeps any scrolled-to element clear of the sticky header (~64-72px),
+       not just #eligibility -- scroll-margin on one element wouldn't cover
+       every Continue-button auto-scroll inside the form. */
+    scroll-padding-top: 6rem;
   }
 
   @media (prefers-reduced-motion: reduce) {

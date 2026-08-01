@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { getStoredConsent } from "@/lib/cookieConsent";
 
 // Rendered as a sibling of <Header>, not a child -- Header uses backdrop-blur,
 // which creates a new CSS containing block and would break `fixed`
@@ -9,6 +10,9 @@ import { AnimatePresence, motion } from "framer-motion";
 // viewport).
 export function MobileStickyCta() {
   const [visible, setVisible] = useState(false);
+  // Shifts up while the cookie banner is still undecided, so the two
+  // fixed-bottom bars don't overlap and cover each other's controls.
+  const [cookieBannerPending, setCookieBannerPending] = useState(true);
 
   useEffect(() => {
     const sentinel = document.getElementById("hero-sentinel");
@@ -23,18 +27,25 @@ export function MobileStickyCta() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setCookieBannerPending(getStoredConsent() === null);
+    const handler = () => setCookieBannerPending(false);
+    window.addEventListener("ftchw-consent-change", handler);
+    return () => window.removeEventListener("ftchw-consent-change", handler);
+  }, []);
+
   return (
     <AnimatePresence>
       {visible && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+          animate={{ opacity: 1, y: cookieBannerPending ? -76 : 0 }}
           exit={{ opacity: 0, y: 16 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
           className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-100 bg-cream-100 p-3 shadow-card-lg lg:hidden"
         >
           <a href="#eligibility" className="btn-primary block w-full text-center">
-            Check Eligibility
+            Start My 60-Second Check
           </a>
         </motion.div>
       )}
