@@ -122,7 +122,18 @@ export async function appendLeadToGoogleSheets(
     try {
       const res = await fetch(webhookUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Apps Script's web app response goes through a redirect to a
+          // googleusercontent.com "echo" URL; without a browser-like
+          // User-Agent/Accept pair that hop reliably 404s for plain
+          // server-to-server fetches even though the script itself ran
+          // and completed successfully -- confirmed via the Apps Script
+          // executions log while debugging this exact behaviour.
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
         body: JSON.stringify({ token, lead: row }),
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean } | null;

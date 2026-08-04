@@ -68,7 +68,10 @@ function doPost(e) {
     }
 
     // Idempotency: skip if this submission_id is already present (column A).
-    const existingIds = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 0), 1).getValues().flat();
+    // getRange() throws if asked for 0 rows, which happens whenever the
+    // sheet only has the header row and no data yet -- guard for that.
+    const lastRow = sheet.getLastRow();
+    const existingIds = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat() : [];
     if (existingIds.includes(body.lead.submission_id)) {
       return jsonResponse({ ok: true, duplicate: true });
     }
